@@ -47,13 +47,13 @@ RETURN collect(distinct r) as rels
 }
 WITH d, collect(distinct chunk) as chunks, avg(score) as score, apoc.coll.toSet(apoc.coll.flatten(collect(rels))) as rels
 WITH d, score, 
-[c in chunks | c.text] as texts,  
+[c in chunks | c.text] as texts,  [c in chunks | c.id] as chunkIds,  
 [r in rels | coalesce(apoc.coll.removeAll(labels(startNode(r)),['__Entity__'])[0],"") +":"+ startNode(r).id + " "+ type(r) + " " + coalesce(apoc.coll.removeAll(labels(endNode(r)),['__Entity__'])[0],"") +":" + endNode(r).id] as entities
 WITH d, score,
 apoc.text.join(texts,"\n----\n") +
 apoc.text.join(entities,"\n")
-as text, entities
-RETURN text, score, {source: COALESCE(CASE WHEN d.url CONTAINS "None" THEN d.fileName ELSE d.url END, d.fileName), entities:entities} as metadata
+as text, entities, chunkIds
+RETURN text, score, {source: COALESCE(CASE WHEN d.url CONTAINS "None" THEN d.fileName ELSE d.url END, d.fileName), chunkIds:chunkIds} as metadata
 """
 
 FINAL_PROMPT = """
@@ -117,15 +117,15 @@ def vector_embed_results(qa,question):
         result = qa({"query": question})
         vector_res['result']=result.get("result")
         sources = set()
-        entities = set()
+        chunkIds = set()
         for document in result["source_documents"]:
             sources.add(document.metadata["source"])
-            for entiti in document.metadata["entities"]:
-                entities.add(entiti)
+            for chunkId in document.metadata["chunkIds"]:
+                chunkIds.add(chunkId)
         vector_res['source']=list(sources)
-        vector_res['entities'] = list(entities)
-        if len( vector_res['entities']) > 5:
-            vector_res['entities'] =  vector_res['entities'][:5]
+        vector_res['chunkIds'] = list(chunkIds)
+        if len( vector_res['chunkIds']) > 5:
+            vector_res['chunkIds'] =  vector_res['chunkIds'][:5]
             
         # list_source_docs=[]
         # for i in result["source_documents"]:
@@ -301,6 +301,7 @@ def QA_RAG(graph,model,question,session_id):
         response_data = extract_and_remove_source(response)
         message = response_data["message"]
         sources = response_data["sources"]
+        chunkIds = vector_res["chunkIds"] if sources else []
         
         print(f"message : {message}")
         print(f"sources : {sources}")
@@ -312,7 +313,7 @@ def QA_RAG(graph,model,question,session_id):
             "info": {
                 "sources": sources,
                 "model":model_version,
-                "entities":vector_res["entities"]
+                "chunkIds": chunkIds
             },
             "user": "chatbot"
             }
