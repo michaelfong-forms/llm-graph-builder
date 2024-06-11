@@ -339,8 +339,9 @@ async def upload_large_file_into_chunks(file:UploadFile = File(...), chunkNumber
                                         originalname=Form(None), model=Form(None), uri=Form(None), userName=Form(None), 
                                         password=Form(None), database=Form(None)):
     try:
+        print('Hello')
         graph = create_graph_database_connection(uri, userName, password, database)
-        result = await asyncio.to_thread(upload_file, graph, model, file, chunkNumber, totalChunks, originalname, CHUNK_DIR, MERGED_DIR)
+        result = upload_file(graph, model, file, chunkNumber, totalChunks, originalname, CHUNK_DIR, MERGED_DIR)
         josn_obj = {'api_name':'upload','db_url':uri}
         logger.log_struct(josn_obj)
         if int(chunkNumber) == int(totalChunks):

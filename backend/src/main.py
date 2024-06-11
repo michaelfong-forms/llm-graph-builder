@@ -1,3 +1,5 @@
+from http.client import HTTPException
+import redis
 from langchain_community.graphs import Neo4jGraph
 from dotenv import load_dotenv
 from datetime import datetime
@@ -395,13 +397,25 @@ def merge_chunks(file_name, total_chunks, chunk_dir, merged_dir):
       os.mkdir(merged_dir)
   logging.info(f'Merged File Path: {merged_dir}')
   merged_file_path = os.path.join(merged_dir, file_name)
-  with open(merged_file_path, "wb") as write_stream:
-      for i in range(1,total_chunks+1):
-          chunk_file_path = os.path.join(chunk_dir, f"{file_name}_part_{i}")
-          logging.info(f'Chunk File Path While Merging Parts:{chunk_file_path}')
-          with open(chunk_file_path, "rb") as chunk_file:
-              shutil.copyfileobj(chunk_file, write_stream)
-          os.unlink(chunk_file_path)  # Delete the individual chunk file after merging
+  
+  redis_client = redis.Redis(host='localhost', port=6379, db=0)
+  chunks = []
+  for i in range(1,total_chunks+1):
+    key = f"{file_name}_chunk_{i}"
+    chunk_data = redis_client.get(key)
+    if chunk_data is None:
+        raise HTTPException(status_code=400, detail=f"Chunk {i} is missing")
+    chunks.append(chunk_data)
+    complete_data = b''.join(chunks)
+    chunk_file_path = os.path.join(chunk_dir, f"{file_name}_part_{i}")
+    with open(merged_file_path, "wb") as write_stream:
+    # with open(chunk_file_path, "rb") as chunk_file:
+        shutil.copyfileobj(complete_data, write_stream)
+          
+          # logging.info(f'Chunk File Path While Merging Parts:{chunk_file_path}')
+          # with open(chunk_file_path, "rb") as chunk_file:
+          #     shutil.copyfileobj(chunk_file, write_stream)
+          # os.unlink(chunk_file_path)  # Delete the individual chunk file after merging
   logging.info("Chunks merged successfully and return file size")
   file_name, pages = get_documents_from_file_by_path(merged_file_path,file_name)
   pdf_total_pages = pages[0].metadata['total_pages']
@@ -412,15 +426,23 @@ def merge_chunks(file_name, total_chunks, chunk_dir, merged_dir):
 
 def upload_file(graph, model, chunk, chunk_number:int, total_chunks:int, originalname, chunk_dir, merged_dir):
   
-  if not os.path.exists(chunk_dir):
-      os.mkdir(chunk_dir)
+  # if not os.path.exists(chunk_dir):
+  #     os.mkdir(chunk_dir)
   
-  chunk_file_path = os.path.join(chunk_dir, f"{originalname}_part_{chunk_number}")
-  logging.info(f'Chunk File Path: {chunk_file_path}')
+  # chunk_file_path = os.path.join(chunk_dir, f"{originalname}_part_{chunk_number}")
+  # logging.info(f'Chunk File Path: {chunk_file_path}')
   
-  with open(chunk_file_path, "wb") as chunk_file:
-      chunk_file.write(chunk.file.read())
-
+  # with open(chunk_file_path, "wb") as chunk_file:
+  #     chunk_file.write(chunk.file.read())
+  redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+  # Upload chunk to Redis
+  key = f"{originalname}_chunk_{chunk_number}"
+  redis_client.set(key, chunk)
+  print('Hello 2')
+  chunk = chunk.file.read()
+  print('Hello 3')
+  print(chunk)
+  
   if int(chunk_number) == int(total_chunks):
       # If this is the last chunk, merge all chunks into a single file
       file_size, pdf_total_pages = merge_chunks(originalname, int(total_chunks), chunk_dir, merged_dir)
