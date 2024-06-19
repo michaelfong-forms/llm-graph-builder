@@ -1,10 +1,6 @@
 from langchain_community.vectorstores.neo4j_vector import Neo4jVector
-from langchain.graphs import Neo4jGraph
 import os
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_google_vertexai import ChatVertexAI
-from langchain_google_vertexai import HarmBlockThreshold, HarmCategory
 import logging
 from langchain_community.chat_message_histories import Neo4jChatMessageHistory
 from src.shared.common_fn import load_embedding_model, get_llm
@@ -22,6 +18,7 @@ from langchain.retrievers.document_compressors import DocumentCompressorPipeline
 from langchain_text_splitters import TokenTextSplitter
 from langchain_core.messages import HumanMessage,AIMessage
 from src.shared.constants import *
+import json
 
 load_dotenv() 
 
@@ -90,7 +87,7 @@ AI Response: "I don't have that information right now. Is there something else I
 Note: This system does not generate answers based solely on internal knowledge. It answers from the information provided in the user's current and previous inputs, and from the context.
 """
 
-def get_neo4j_retriever(graph, index_name="vector", search_k=CHAT_SEARCH_KWARG_K, score_threshold=CHAT_SEARCH_KWARG_SCORE_THRESHOLD):
+def get_neo4j_retriever(graph, document_names, index_name="vector", search_k=CHAT_SEARCH_KWARG_K, score_threshold=CHAT_SEARCH_KWARG_SCORE_THRESHOLD):
     try:
         neo_db = Neo4jVector.from_existing_index(
             embedding=EMBEDDING_FUNCTION,
@@ -99,8 +96,13 @@ def get_neo4j_retriever(graph, index_name="vector", search_k=CHAT_SEARCH_KWARG_K
             graph=graph
         )
         logging.info(f"Successfully retrieved Neo4jVector index '{index_name}'")
-        retriever = neo_db.as_retriever(search_kwargs={'k': search_k, "score_threshold": score_threshold})
-        logging.info(f"Successfully created retriever for index '{index_name}' with search_k={search_k}, score_threshold={score_threshold}")
+        if document_names:
+            document_names= list(map(str.strip, json.loads(document_names)))
+            retriever = neo_db.as_retriever(search_kwargs={'k': search_k, "score_threshold": score_threshold,'filter':{'fileName': {'$in': document_names}}})
+            logging.info(f"Successfully created retriever for index '{index_name}' with search_k={search_k}, score_threshold={score_threshold} for documents {document_names}")
+        else:
+            retriever = neo_db.as_retriever(search_kwargs={'k': search_k, "score_threshold": score_threshold})
+            logging.info(f"Successfully created retriever for index '{index_name}' with search_k={search_k}, score_threshold={score_threshold}")
         return retriever
     except Exception as e:
         logging.error(f"Error retrieving Neo4jVector index '{index_name}' or creating retriever: {e}")
@@ -273,13 +275,13 @@ def clear_chat_history(graph,session_id):
             "user": "chatbot"
             }
 
-def QA_RAG(graph,model,question,session_id):
+def QA_RAG(graph,model,question,session_id,document_names):
     try:
         start_time = time.time()
         print(model)
         model_version = MODEL_VERSIONS[model]
         llm = get_llm(model_version)
-        retriever = get_neo4j_retriever(graph=graph)
+        retriever = get_neo4j_retriever(graph=graph,document_names=document_names)
         doc_retriever = create_document_retriever_chain(llm,retriever)
         history = create_neo4j_chat_message_history(graph,session_id )
         chat_setup_time = time.time() - start_time
