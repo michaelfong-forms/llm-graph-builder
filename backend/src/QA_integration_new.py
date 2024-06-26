@@ -29,23 +29,17 @@ EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL')
 EMBEDDING_FUNCTION , _ = load_embedding_model(EMBEDDING_MODEL)
 
 RETRIEVAL_QUERY = """
-WITH node as chunk, score
+WITH node AS chunk, score
 MATCH (chunk)-[:PART_OF]->(d:Document)
-CALL { WITH chunk
-MATCH (chunk)-[:HAS_ENTITY]->(e)
-MATCH path=(e)(()-[rels:!HAS_ENTITY&!PART_OF]-()){0,2}(:!Chunk&!Document)
-UNWIND rels as r
-RETURN collect(distinct r) as rels
-}
-WITH d, collect(distinct chunk) as chunks, avg(score) as score, apoc.coll.toSet(apoc.coll.flatten(collect(rels))) as rels
-WITH d, score,
-[c in chunks | c.text] as texts,  [c in chunks | c.id] as chunkIds, [c in chunks | c.start_time] as start_time, [c in chunks | c.page_number] as page_numbers, [c in chunks | c.start_time] as start_times, 
-[r in rels | coalesce(apoc.coll.removeAll(labels(startNode(r)),['__Entity__'])[0],"") +":"+ startNode(r).id + " "+ type(r) + " " + coalesce(apoc.coll.removeAll(labels(endNode(r)),['__Entity__'])[0],"") +":" + endNode(r).id] as entities
-WITH d, score,
-apoc.text.join(texts,"\n----\n") +
-apoc.text.join(entities,"\n")
-as text, entities, chunkIds, page_numbers ,start_times
-RETURN text, score, {source: COALESCE(CASE WHEN d.url CONTAINS "None" THEN d.fileName ELSE d.url END, d.fileName), chunkIds:chunkIds, page_numbers:page_numbers,start_times:start_times,entities:entities} as metadata
+WITH d, collect(DISTINCT chunk) AS chunks, avg(score) AS avg_score, 
+     apoc.text.join([(chunk)-[:HAS_ENTITY]->(e) | head(labels(e)) + ": " + e.id + ": " + COALESCE(e.description, " ")], ", ") AS entities
+WITH d, avg_score,entities,
+     [c IN chunks | c.text] AS texts,  [c IN chunks | c.id] AS chunkIds, [c IN chunks | c.start_time] AS start_times, [c IN chunks | c.page_number] AS page_numbers
+WITH d, avg_score,
+     apoc.text.join(texts + "\n" + entities, "\n----\n") AS text, chunkIds, page_numbers, start_times
+RETURN text, avg_score AS score, 
+       {source: COALESCE(CASE WHEN d.url CONTAINS "None" THEN d.fileName ELSE d.url END, d.fileName), chunkIds: chunkIds, page_numbers: page_numbers, 
+             start_times: start_times} AS metadata
 """
 
 SYSTEM_TEMPLATE = """
@@ -117,10 +111,10 @@ def create_document_retriever_chain(llm,retriever):
     )
     output_parser = StrOutputParser()
 
-    splitter = TokenTextSplitter(chunk_size=2000, chunk_overlap=0)
+    splitter = TokenTextSplitter(chunk_size=7500, chunk_overlap=0)
     # extractor = LLMChainExtractor.from_llm(llm)
     # redundant_filter = EmbeddingsRedundantFilter(embeddings=EMBEDDING_FUNCTION)
-    embeddings_filter = EmbeddingsFilter(embeddings=EMBEDDING_FUNCTION, similarity_threshold=0.25)
+    embeddings_filter = EmbeddingsFilter(embeddings=EMBEDDING_FUNCTION, similarity_threshold=0.15)
 
     pipeline_compressor = DocumentCompressorPipeline(
         transformers=[splitter, embeddings_filter]
@@ -159,7 +153,7 @@ def create_neo4j_chat_message_history(graph, session_id):
 
 def format_documents(documents):
     sorted_documents = sorted(documents, key=lambda doc: doc.state["query_similarity_score"], reverse=True)
-    sorted_documents = sorted_documents[:7]
+    sorted_documents = sorted_documents[:2]
 
     formatted_docs = []
     sources = set()
@@ -295,7 +289,7 @@ def QA_RAG(graph,model,question,session_id):
             }
         )
         if docs:
-            # print(docs)
+            print(docs)
             formatted_docs,sources = format_documents(docs)
             
             doc_retrieval_time = time.time() - start_time
