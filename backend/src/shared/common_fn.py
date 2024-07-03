@@ -11,7 +11,8 @@ from typing import List
 import re
 import os
 from pathlib import Path
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
+import openai
 from langchain_google_vertexai import ChatVertexAI
 from langchain_groq import ChatGroq
 from langchain_google_vertexai import HarmBlockThreshold, HarmCategory
@@ -117,6 +118,7 @@ def close_db_connection(graph, api_name):
       # graph._driver.close()   
       
 def get_llm(model_version:str) :
+    logging.info(f"get_llm model_version: {model_version}")
     """Retrieve the specified language model based on the model name."""
     if "gemini" in model_version:
         llm = ChatVertexAI(
@@ -132,10 +134,27 @@ def get_llm(model_version:str) :
             }
         )
     elif "gpt" in model_version:
-        llm = ChatOpenAI(api_key=os.environ.get('OPENAI_API_KEY'), 
-                         model=model_version, 
-                         temperature=0)
-        
+        logging.info("get_llm gpt")
+        if (
+            os.environ.get("AZURE_OPENAI_ENDPOINT") != None
+            and os.environ.get("AZURE_OPENAI_API_KEY") != None
+            and os.environ.get("AZURE_DEPLOYMENT_NAME") != None
+        ):
+            logging.info("get_llm azure")
+            deployment_names = os.environ.get("AZURE_DEPLOYMENT_NAME").split(",")
+            assert model_version in deployment_names
+            llm = AzureChatOpenAI(
+                azure_deployment=model_version,
+                temperature=0,
+            )
+        else:
+            llm = ChatOpenAI(
+                api_key=os.environ.get("OPENAI_API_KEY"),
+                model=model_version,
+                temperature=0,
+            )
+        logging.info(llm)
+
     elif "llama3" in model_version:
         llm = ChatGroq(api_key=os.environ.get('GROQ_API_KEY'),
                        temperature=0,

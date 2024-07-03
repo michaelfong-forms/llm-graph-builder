@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import logging
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
-from langchain_experimental.graph_transformers import LLMGraphTransformer
+from src.shared.graph_transformers import LLMGraphTransformer
 from src.shared.common_fn import get_combined_chunks, get_llm
 
 load_dotenv()

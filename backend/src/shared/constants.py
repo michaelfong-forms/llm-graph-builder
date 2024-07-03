@@ -5,9 +5,10 @@ MODEL_VERSIONS = {
         "gpt-4": "gpt-4-0125-preview",
         "diffbot" : "gpt-4o",
         "gpt-4o":"gpt-4o",
+        "gpt-35-turbo": "gpt-35-turbo",
         "groq-llama3" : "llama3-70b-8192"
          }
-OPENAI_MODELS = ["gpt-3.5", "gpt-4o"]
+OPENAI_MODELS = ["gpt-3.5", "gpt-4o", "gpt-35-turbo"]
 GEMINI_MODELS = ["gemini-1.0-pro", "gemini-1.5-pro"]
 CHAT_MAX_TOKENS = 1000
 CHAT_SEARCH_KWARG_K = 3
